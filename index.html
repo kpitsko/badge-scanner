@@ -94,6 +94,8 @@
 <script>
 const FORM_URL = 'https://techcollect.ai/cai-national-2026/';
 const STORAGE_KEY = 'badge-scanner.workerUrl';
+// Built-in OCR worker — the app works out of the box, no setup. Settings can override it.
+const DEFAULT_WORKER_URL = 'https://badge-scanner-ocr.kim-pitsko.workers.dev';
 const FIELD_IDS = ['firstName','lastName','email','company','title'];
 const $ = (id) => document.getElementById(id);
 
@@ -108,7 +110,7 @@ const settingsPanel = $('settings');
 const workerUrlInput = $('workerUrlInput');
 
 function getWorkerUrl() {
-  return localStorage.getItem(STORAGE_KEY) || '';
+  return localStorage.getItem(STORAGE_KEY) || DEFAULT_WORKER_URL;
 }
 function setWorkerUrl(url) {
   if (url) localStorage.setItem(STORAGE_KEY, url);
