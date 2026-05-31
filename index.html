@@ -67,7 +67,7 @@
   </div>
 
   <button id="scanBtn" class="scan-btn">📷 Scan a badge</button>
-  <input id="fileIn" type="file" accept="image/*" capture="environment" hidden>
+  <input id="fileIn" type="file" accept="image/*" hidden>
 
   <img id="preview" class="hidden" alt="Captured badge">
 
@@ -220,28 +220,49 @@ fileIn.addEventListener('change', async (e) => {
 });
 
 async function compressImage(file, maxDim = 2000, quality = 0.92) {
-  const dataUrlRaw = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('Could not read photo file'));
-    reader.readAsDataURL(file);
-  });
-  const img = await new Promise((resolve, reject) => {
-    const im = new Image();
-    im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error('Could not decode photo'));
-    im.src = dataUrlRaw;
-  });
-  const ratio = Math.min(maxDim / img.naturalWidth, maxDim / img.naturalHeight, 1);
-  const w = Math.max(1, Math.round(img.naturalWidth * ratio));
-  const h = Math.max(1, Math.round(img.naturalHeight * ratio));
+  // Decode the photo. createImageBitmap is the reliable path on phones: it
+  // decodes large (12MP+) images off the main thread and honors EXIF
+  // orientation, avoiding the rotation/blank-canvas bugs that the older
+  // <img>+canvas path hits on iOS Safari. Fall back if it's unavailable.
+  let source, srcW, srcH;
+  try {
+    source = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    srcW = source.width;
+    srcH = source.height;
+  } catch {
+    const dataUrlRaw = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Could not read photo file'));
+      reader.readAsDataURL(file);
+    });
+    source = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('Could not decode photo'));
+      im.src = dataUrlRaw;
+    });
+    srcW = source.naturalWidth;
+    srcH = source.naturalHeight;
+  }
+
+  if (!srcW || !srcH) throw new Error('Photo had no readable image data. Try a different photo.');
+
+  const ratio = Math.min(maxDim / srcW, maxDim / srcH, 1);
+  const w = Math.max(1, Math.round(srcW * ratio));
+  const h = Math.max(1, Math.round(srcH * ratio));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(source, 0, 0, w, h);
+  if (source.close) source.close();
+
   const dataUrl = canvas.toDataURL('image/jpeg', quality);
   const base64 = dataUrl.split(',')[1] || '';
+  if (base64.length < 1000) throw new Error('Image processing failed on this device. Try a smaller photo.');
   return { base64, dataUrl };
 }
 
