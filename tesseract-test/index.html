@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f172a">
+<title>Badge Scanner — CAI National 2026</title>
+<style>
+  *,*::before,*::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0f172a; color: #e2e8f0;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+  body { padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); max-width: 560px; margin: 0 auto; }
+  header { padding: 16px 0 4px; font-size: 20px; font-weight: 600; }
+  .hint { color: #94a3b8; font-size: 13px; margin-bottom: 16px; }
+  button { -webkit-appearance: none; appearance: none; border: 0; background: #2563eb; color: white;
+    padding: 14px 18px; border-radius: 12px; font-size: 16px; font-weight: 600; width: 100%;
+    cursor: pointer; font-family: inherit; }
+  button.secondary { background: #334155; }
+  button.small { width: auto; padding: 10px 14px; font-size: 14px; font-weight: 500; flex-shrink: 0; }
+  button:active { transform: scale(0.98); }
+  .scan-btn { padding: 22px; font-size: 18px; margin: 8px 0 16px; }
+  #preview { width: 100%; border-radius: 12px; margin: 8px 0; max-height: 220px; object-fit: contain; background: #1e293b; }
+  .progress { background: #1e293b; padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; color: #94a3b8; }
+  .progress-bar { height: 4px; background: #334155; border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .progress-bar > div { height: 100%; background: #2563eb; width: 0%; transition: width 0.2s; }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+  .field .row { display: flex; gap: 8px; }
+  .field input { flex: 1; min-width: 0; padding: 12px; border-radius: 8px; border: 1px solid #334155;
+    background: #1e293b; color: #e2e8f0; font-size: 16px; font-family: inherit; }
+  .field input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  .copied { background: #16a34a !important; }
+  details { margin: 16px 0; }
+  summary { color: #94a3b8; font-size: 13px; cursor: pointer; padding: 4px 0; }
+  details pre { background: #1e293b; padding: 12px; border-radius: 8px; font-size: 12px;
+    white-space: pre-wrap; overflow-x: auto; color: #cbd5e1; margin: 6px 0 0; }
+  .actions { display: grid; gap: 8px; margin: 16px 0 40px; }
+  .hidden { display: none !important; }
+  .err { background: #7f1d1d; color: #fee2e2; padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+  <header>Badge Scanner</header>
+  <div class="hint">Point the camera at a badge. Text is read on-device; tap a field's Copy button, then paste into the form.</div>
+
+  <button id="scanBtn" class="scan-btn">📷 Scan a badge</button>
+  <input id="fileIn" type="file" accept="image/*" capture="environment" hidden>
+
+  <img id="preview" class="hidden" alt="Captured badge">
+
+  <div id="progress" class="progress hidden">
+    <div id="progressLabel">Loading OCR engine…</div>
+    <div class="progress-bar"><div id="progressFill"></div></div>
+  </div>
+
+  <div id="errorBox" class="err hidden"></div>
+
+  <div id="fields" class="hidden">
+    <div class="field"><label>First name</label><div class="row"><input id="firstName" autocomplete="off" autocapitalize="words" spellcheck="false"><button class="small secondary" data-copy="firstName">Copy</button></div></div>
+    <div class="field"><label>Last name</label><div class="row"><input id="lastName" autocomplete="off" autocapitalize="words" spellcheck="false"><button class="small secondary" data-copy="lastName">Copy</button></div></div>
+    <div class="field"><label>Email</label><div class="row"><input id="email" type="email" autocomplete="off" autocapitalize="off" inputmode="email" spellcheck="false"><button class="small secondary" data-copy="email">Copy</button></div></div>
+    <div class="field"><label>Company</label><div class="row"><input id="company" autocomplete="off" autocapitalize="words" spellcheck="false"><button class="small secondary" data-copy="company">Copy</button></div></div>
+    <div class="field"><label>Job title</label><div class="row"><input id="title" autocomplete="off" autocapitalize="words" spellcheck="false"><button class="small secondary" data-copy="title">Copy</button></div></div>
+
+    <details>
+      <summary>Show raw OCR text</summary>
+      <pre id="rawText"></pre>
+    </details>
+
+    <div class="actions">
+      <button id="openForm">Open techcollect form ↗</button>
+      <button id="reset" class="secondary">Scan another</button>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const FORM_URL = 'https://techcollect.ai/cai-national-2026/';
+const FIELD_IDS = ['firstName','lastName','email','company','title'];
+
+const scanBtn   = $('scanBtn');
+const fileIn    = $('fileIn');
+const preview   = $('preview');
+const progress  = $('progress');
+const progLabel = $('progressLabel');
+const progFill  = $('progressFill');
+const fields    = $('fields');
+const rawText   = $('rawText');
+const errorBox  = $('errorBox');
+
+scanBtn.addEventListener('click', () => fileIn.click());
+$('reset').addEventListener('click', resetUi);
+$('openForm').addEventListener('click', () => window.open(FORM_URL, '_blank', 'noopener'));
+
+document.querySelectorAll('button[data-copy]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.copy;
+    const val = $(id).value;
+    const ok = await copyToClipboard(val);
+    const original = btn.textContent;
+    btn.textContent = ok ? '✓ Copied' : 'Select & copy';
+    btn.classList.toggle('copied', ok);
+    if (!ok) { $(id).focus(); $(id).select(); }
+    setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1100);
+  });
+});
+
+async function copyToClipboard(text) {
+  if (!text) return false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch {}
+  document.body.removeChild(ta);
+  return ok;
+}
+
+function resetUi() {
+  fields.classList.add('hidden');
+  preview.classList.add('hidden');
+  preview.removeAttribute('src');
+  errorBox.classList.add('hidden');
+  errorBox.textContent = '';
+  FIELD_IDS.forEach(id => $(id).value = '');
+  rawText.textContent = '';
+  fileIn.value = '';
+}
+
+function showError(msg) {
+  errorBox.textContent = msg;
+  errorBox.classList.remove('hidden');
+}
+
+fileIn.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  errorBox.classList.add('hidden');
+  preview.src = URL.createObjectURL(file);
+  preview.classList.remove('hidden');
+  fields.classList.add('hidden');
+  progress.classList.remove('hidden');
+  progLabel.textContent = 'Reading badge…';
+  progFill.style.width = '0%';
+
+  try {
+    if (typeof Tesseract === 'undefined') {
+      throw new Error('OCR engine failed to load. Check your network connection and reopen the page.');
+    }
+    const { data } = await Tesseract.recognize(file, 'eng', {
+      logger: (m) => {
+        if (m.status) {
+          const s = m.status.charAt(0).toUpperCase() + m.status.slice(1);
+          progLabel.textContent = s + '…';
+        }
+        if (typeof m.progress === 'number') {
+          progFill.style.width = Math.round(m.progress * 100) + '%';
+        }
+      }
+    });
+    const text = (data.text || '').trim();
+    rawText.textContent = text || '(no text detected)';
+    const parsed = parseBadge(text);
+    $('firstName').value = parsed.firstName;
+    $('lastName').value  = parsed.lastName;
+    $('email').value     = parsed.email;
+    $('company').value   = parsed.company;
+    $('title').value     = parsed.title;
+    progress.classList.add('hidden');
+    fields.classList.remove('hidden');
+  } catch (err) {
+    progress.classList.add('hidden');
+    showError('OCR failed: ' + (err?.message || err));
+  }
+});
+
+// Heuristic parser for conference-badge OCR output.
+// Order matters: pull email first (most specific), then title/company by keywords,
+// then take the most name-like remaining line.
+function parseBadge(text) {
+  const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const out = { firstName: '', lastName: '', title: '', company: '', email: '' };
+
+  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (emailMatch) out.email = emailMatch[0];
+
+  const titleRe = /\b(CEO|CFO|COO|CTO|CIO|CMO|CAM|PCAM|AMS|CMCA|VP|SVP|EVP|President|Vice\s*President|Director|Manager|Officer|Owner|Founder|Co-?Founder|Partner|Principal|Engineer|Realtor|Realtor®|Agent|Broker|Consultant|Coordinator|Specialist|Analyst|Lead|Head|Chief|Administrator|Supervisor|Executive|Associate|Representative)\b/i;
+  const companyRe = /\b(Inc\.?|LLC|L\.L\.C\.|Corp\.?|Corporation|Ltd\.?|Limited|GmbH|Group|Solutions|Technologies|Tech|Systems|Services|Partners|Holdings|Properties|Property\s*Management|Community\s*Management|Association\s*Management|Realty|Real\s*Estate|Management|Consulting|Capital|Ventures|Labs|Studio|Co\.|Company|HOA|Communities|Associates)\b/i;
+
+  // Remove the line containing the email from name/title/company candidacy.
+  const usable = lines.map((l, i) => ({ l, i }))
+    .filter(({ l }) => !out.email || !l.includes(out.email));
+
+  const titleHit = usable.find(({ l }) => titleRe.test(l));
+  if (titleHit) out.title = titleHit.l;
+
+  const companyHit = usable.find(({ l, i }) => i !== titleHit?.i && companyRe.test(l));
+  if (companyHit) out.company = companyHit.l;
+
+  const usedIdx = new Set([titleHit?.i, companyHit?.i].filter(v => v !== undefined));
+
+  const nameLike = (s) => {
+    if (/[@\d]/.test(s)) return false;
+    if (/[•·|]/.test(s)) return false;
+    const words = s.split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 4) return false;
+    return words.every(w => /^[A-Z][a-zA-Z'’.\-]*$/.test(w) || /^[A-Z]\.?$/.test(w));
+  };
+
+  let nameLine = '';
+  for (const { l, i } of usable) {
+    if (usedIdx.has(i)) continue;
+    if (nameLike(l)) { nameLine = l; break; }
+  }
+  if (!nameLine) {
+    const first = usable.find(({ i }) => !usedIdx.has(i));
+    if (first) nameLine = first.l;
+  }
+
+  if (nameLine) {
+    const words = nameLine.replace(/[,;].*$/, '').split(/\s+/).filter(Boolean);
+    if (words.length === 1) {
+      out.firstName = words[0];
+    } else {
+      out.firstName = words[0];
+      out.lastName = words.slice(1).join(' ');
+    }
+  }
+  return out;
+}
+</script>
+</body>
+</html>
