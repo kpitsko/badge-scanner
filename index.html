@@ -144,7 +144,18 @@ scanBtn.addEventListener('click', () => {
 });
 
 $('reset').addEventListener('click', resetUi);
-$('openForm').addEventListener('click', () => window.open(FORM_URL, '_blank', 'noopener'));
+// Map our fields → HubSpot contact property internal names, pass as query string.
+// HubSpot pre-populates the embedded form's matching fields from these params.
+const HS_PARAM = { firstName: 'firstname', lastName: 'lastname', email: 'email', company: 'company', title: 'jobtitle' };
+$('openForm').addEventListener('click', () => {
+  const params = new URLSearchParams();
+  FIELD_IDS.forEach(id => {
+    const v = $(id).value.trim();
+    if (v && HS_PARAM[id]) params.set(HS_PARAM[id], v);
+  });
+  const qs = params.toString();
+  window.open(qs ? `${FORM_URL}?${qs}` : FORM_URL, '_blank', 'noopener');
+});
 
 document.querySelectorAll('button[data-copy]').forEach(btn => {
   btn.addEventListener('click', async () => {
