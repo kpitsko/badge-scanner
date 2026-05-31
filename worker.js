@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const MODEL = "claude-haiku-4-5";
+const MODEL = "claude-opus-4-8";
 
 const SYSTEM_PROMPT = `You extract structured contact info from photos of conference attendee badges. The conference is CAI National 2026 (Community Associations Institute) — attendees include community managers, property managers, HOA board members, vendors, and service providers.
 
@@ -63,6 +63,7 @@ export default {
         model: MODEL,
         max_tokens: 400,
         output_config: {
+          effort: "low",
           format: { type: "json_schema", schema: SCHEMA },
         },
         system: SYSTEM_PROMPT,

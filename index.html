@@ -219,7 +219,7 @@ fileIn.addEventListener('change', async (e) => {
   }
 });
 
-async function compressImage(file, maxDim = 1280, quality = 0.85) {
+async function compressImage(file, maxDim = 2000, quality = 0.92) {
   const dataUrlRaw = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
